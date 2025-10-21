@@ -58,18 +58,18 @@ namespace Udacity.springerlookupdemo
 
             public class OutputRecordMessage
             {
-                public string Message { get; set; }
+                public string Message { get; set; } = string.Empty;
             }
 
             public string RecordId { get; set; }
             public OutputRecordData Data { get; set; }
-            public List<OutputRecordMessage> Errors { get; set; }
-            public List<OutputRecordMessage> Warnings { get; set; }
+            public List<OutputRecordMessage> Errors { get; set; } = new();
+            public List<OutputRecordMessage> Warnings { get; set; } = new();
         }
 
         private class WebApiResponse
         {
-            public List<OutputRecord> Values { get; set; }
+            public List<OutputRecord> Values { get; set; } = new();
         }
         #endregion
 
@@ -102,14 +102,12 @@ namespace Udacity.springerlookupdemo
             {
                 if (record == null || record.RecordId == null) continue;
 
-                OutputRecord responseRecord = new OutputRecord
-                {
-                    RecordId = record.RecordId
-                };
+                var responseRecord = new OutputRecord { RecordId = record.RecordId };
 
                 try
                 {
-                    responseRecord.Data = GetEntityMetadata(record.Data.ArticleName).Result;
+                    // Await the async method rather than blocking with .Result to avoid thread starvation.
+                    responseRecord.Data = await GetEntityMetadata(record.Data?.ArticleName ?? string.Empty);
                 }
                 catch (Exception e)
                 {
@@ -119,10 +117,7 @@ namespace Udacity.springerlookupdemo
                         Message = e.Message
                     };
 
-                    responseRecord.Errors = new List<OutputRecord.OutputRecordMessage>
-                    {
-                        error
-                    };
+                    responseRecord.Errors.Add(error);
                 }
                 finally
                 {
@@ -136,7 +131,7 @@ namespace Udacity.springerlookupdemo
         #region Methods to call the Springer API
         
         
-        private async static Task<OutputRecord.OutputRecordData> GetEntityMetadata(string title)
+        private static async Task<OutputRecord.OutputRecordData> GetEntityMetadata(string title)
         {
             var uri = springerapiendpoint + "?q=title:\"" + title + "\"&api_key=" + apikey;
             var result = new OutputRecord.OutputRecordData();
@@ -147,16 +142,18 @@ namespace Udacity.springerlookupdemo
                 RequestUri = new Uri(uri)
             })
             {
-                HttpResponseMessage response = await client.SendAsync(request);
-                string responseBody = await response?.Content?.ReadAsStringAsync();
-                JObject springerresults = JObject.Parse(responseBody);
-                IList<JToken> parsedresults = springerresults["records"].Children().ToList();
+                var httpResponse = await client.SendAsync(request);
+                httpResponse.EnsureSuccessStatusCode();
+                string responseBody = await httpResponse.Content.ReadAsStringAsync();
+                var springerresults = JObject.Parse(responseBody);
+                var parsedresults = springerresults["records"]?.Children().ToList() ?? new List<JToken>();
 
-                foreach(JToken t in parsedresults){
-                    result.DOI = t.Value<string>("doi");
-                    result.PublicationDate = t.Value<string>("publicationDate");
-                    result.PublicationName = t.Value<string>("publicationName");
-                    result.Publisher = t.Value<string>("publisher");
+                foreach (var t in parsedresults)
+                {
+                    result.DOI = t.Value<string>("doi") ?? result.DOI;
+                    result.PublicationDate = t.Value<string>("publicationDate") ?? result.PublicationDate;
+                    result.PublicationName = t.Value<string>("publicationName") ?? result.PublicationName;
+                    result.Publisher = t.Value<string>("publisher") ?? result.Publisher;
                 }
             }
 
